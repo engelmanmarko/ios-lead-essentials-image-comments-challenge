@@ -4,7 +4,7 @@
 
 import Foundation
 
-public final class RemoteFeedLoader<T> {
+public final class ResourceLoader<T> {
 	private let url: URL
 	private let client: HTTPClient
 	private let mapper: Mapper
@@ -39,7 +39,7 @@ public final class RemoteFeedLoader<T> {
 }
 
 // MARK: - Private
-private extension RemoteFeedLoader {
+private extension ResourceLoader {
 	func map(_ data: Data, from response: HTTPURLResponse) -> Result {
 		do {
 			return .success(try mapper(data, response))
