@@ -4,20 +4,20 @@
 
 import Foundation
 
-public final class RemoteFeedLoader: FeedLoader {
+public final class RemoteFeedLoader<T> {
 	private let url: URL
 	private let client: HTTPClient
-	private let mapper: FeedMapper
+	private let mapper: Mapper
 	
 	public enum Error: Swift.Error {
 		case connectivity
 		case invalidData
 	}
 	
-	public typealias FeedMapper = (_ data: Data, _ response: HTTPURLResponse) throws -> [FeedImage]
-	public typealias Result = FeedLoader.Result
+	public typealias Mapper = (_ data: Data, _ response: HTTPURLResponse) throws -> T
+	public typealias Result = Swift.Result<T, Swift.Error>
 	
-	public init(url: URL, client: HTTPClient, mapper: @escaping FeedMapper) {
+	public init(url: URL, client: HTTPClient, mapper: @escaping Mapper) {
 		self.url = url
 		self.client = client
 		self.mapper = mapper
@@ -42,8 +42,7 @@ public final class RemoteFeedLoader: FeedLoader {
 private extension RemoteFeedLoader {
 	func map(_ data: Data, from response: HTTPURLResponse) -> Result {
 		do {
-			let items = try mapper(data, response)
-			return .success(items)
+			return .success(try mapper(data, response))
 		} catch {
 			return .failure(Error.invalidData)
 		}
