@@ -5,7 +5,7 @@
 import XCTest
 import EssentialFeed
 
-class LoadFeedFromRemoteUseCaseTests: XCTestCase {
+class FeedItemsMapperTests: XCTestCase {
 	func test_throwsErrorOnNon200HTTPResponse() {
 		let samples = [199, 201, 300, 400, 500].compactMap {
 			HTTPURLResponse(url: anyURL(), statusCode: $0, httpVersion: nil, headerFields: nil)
