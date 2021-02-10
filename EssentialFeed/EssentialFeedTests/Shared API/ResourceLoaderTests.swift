@@ -44,68 +44,32 @@ class ResourceLoaderTests: XCTestCase {
 		})
 	}
 	
-	func test_load_deliversErrorOnNon200HTTPResponse() {
-		let (sut, client) = makeSUT()
-		
-		let samples = [199, 201, 300, 400, 500]
-		
-		samples.enumerated().forEach { index, code in
-			expect(sut, toCompleteWith: failure(.invalidData), when: {
-				let json = makeItemsJSON([])
-				client.complete(withStatusCode: code, data: json, at: index)
-			})
-		}
-	}
-	
-	func test_load_deliversErrorOn200HTTPResponseWithInvalidJSON() {
-		let (sut, client) = makeSUT()
+	func test_load_deliversErrorOnMapperError() {
+		let (sut, client) = makeSUT(mapper: { _, _ in throw anyNSError() })
 		
 		expect(sut, toCompleteWith: failure(.invalidData), when: {
-			let invalidJSON = Data("invalid json".utf8)
-			client.complete(withStatusCode: 200, data: invalidJSON)
+			client.complete(withStatusCode: 200, data: anyData())
 		})
 	}
 	
-	func test_load_deliversNoItemsOn200HTTPResponseWithEmptyJSONList() {
-		let (sut, client) = makeSUT()
-		
-		expect(sut, toCompleteWith: .success([]), when: {
-			let emptyListJSON = makeItemsJSON([])
-			client.complete(withStatusCode: 200, data: emptyListJSON)
-		})
-	}
-	
-	func test_load_deliversItemsOn200HTTPResponseWithJSONItems() {
-		let (sut, client) = makeSUT()
-		
-		let item1 = makeItem(
-			id: UUID(),
-			imageURL: URL(string: "http://a-url.com")!)
-		
-		let item2 = makeItem(
-			id: UUID(),
-			description: "a description",
-			location: "a location",
-			imageURL: URL(string: "http://another-url.com")!)
-		
-		let items = [item1.model, item2.model]
-		
-		expect(sut, toCompleteWith: .success(items), when: {
-			let json = makeItemsJSON([item1.json, item2.json])
-			client.complete(withStatusCode: 200, data: json)
+	func test_load_deliversMappedResourceOn200HTTPResponse() {
+		let resource = Self.anyResource()
+		let (sut, client) = makeSUT(mapper: { _,_ in resource })
+		expect(sut, toCompleteWith: .success(resource), when: {
+			client.complete(withStatusCode: 200, data: anyData())
 		})
 	}
 	
 	func test_load_doesNotDeliverResultAfterSUTInstanceHasBeenDeallocated() {
 		let url = URL(string: "http://any-url.com")!
 		let client = HTTPClientSpy()
-		var sut: ResourceLoader? = ResourceLoader(url: url, client: client, mapper: FeedItemsMapper.map)
+		var sut: ResourceLoader? = AnyResourceLoader(url: url, client: client, mapper: { _,_ in ResourceLoaderTests.anyResource() })
 		
-		var capturedResults = [ResourceLoader<[FeedImage]>.Result]()
+		var capturedResults = [AnyResourceLoader.Result]()
 		sut?.load { capturedResults.append($0) }
 		
 		sut = nil
-		client.complete(withStatusCode: 200, data: makeItemsJSON([]))
+		client.complete(withStatusCode: 200, data: anyData())
 		
 		XCTAssertTrue(capturedResults.isEmpty)
 	}
@@ -113,37 +77,23 @@ class ResourceLoaderTests: XCTestCase {
 
 // MARK: - Private
 private extension ResourceLoaderTests {
-	private func makeSUT(url: URL = URL(string: "https://a-url.com")!, file: StaticString = #filePath, line: UInt = #line) -> (sut: ResourceLoader<[FeedImage]>, client: HTTPClientSpy) {
+	private func makeSUT(
+		url: URL = URL(string: "https://a-url.com")!,
+		file: StaticString = #filePath, line: UInt = #line,
+		mapper: @escaping AnyResourceMapper = { _,_ in anyResource() }
+	) -> (sut: AnyResourceLoader, client: HTTPClientSpy) {
 		let client = HTTPClientSpy()
-		let sut = ResourceLoader(url: url, client: client, mapper: FeedItemsMapper.map)
+		let sut = ResourceLoader(url: url, client: client, mapper: mapper)
 		trackForMemoryLeaks(sut, file: file, line: line)
 		trackForMemoryLeaks(client, file: file, line: line)
 		return (sut, client)
 	}
 	
-	private func failure(_ error: ResourceLoader<[FeedImage]>.Error) -> ResourceLoader<[FeedImage]>.Result {
+	private func failure(_ error: AnyResourceLoader.Error) -> AnyResourceLoader.Result {
 		return .failure(error)
 	}
 	
-	private func makeItem(id: UUID, description: String? = nil, location: String? = nil, imageURL: URL) -> (model: FeedImage, json: [String: Any]) {
-		let item = FeedImage(id: id, description: description, location: location, url: imageURL)
-		
-		let json = [
-			"id": id.uuidString,
-			"description": description,
-			"location": location,
-			"image": imageURL.absoluteString
-		].compactMapValues { $0 }
-		
-		return (item, json)
-	}
-	
-	private func makeItemsJSON(_ items: [[String: Any]]) -> Data {
-		let json = ["items": items]
-		return try! JSONSerialization.data(withJSONObject: json)
-	}
-	
-	private func expect(_ sut: ResourceLoader<[FeedImage]>, toCompleteWith expectedResult: ResourceLoader<[FeedImage]>.Result, when action: () -> Void, file: StaticString = #filePath, line: UInt = #line) {
+	private func expect(_ sut: AnyResourceLoader, toCompleteWith expectedResult: AnyResourceLoader.Result, when action: () -> Void, file: StaticString = #filePath, line: UInt = #line) {
 		let exp = expectation(description: "Wait for load completion")
 		
 		sut.load { receivedResult in
@@ -151,7 +101,7 @@ private extension ResourceLoaderTests {
 			case let (.success(receivedItems), .success(expectedItems)):
 				XCTAssertEqual(receivedItems, expectedItems, file: file, line: line)
 				
-			case let (.failure(receivedError as ResourceLoader<[FeedImage]>.Error), .failure(expectedError as ResourceLoader<[FeedImage]>.Error)):
+			case let (.failure(receivedError as AnyResourceLoader.Error), .failure(expectedError as AnyResourceLoader.Error)):
 				XCTAssertEqual(receivedError, expectedError, file: file, line: line)
 				
 			default:
@@ -164,5 +114,19 @@ private extension ResourceLoaderTests {
 		action()
 		
 		wait(for: [exp], timeout: 1.0)
+	}
+}
+
+private extension XCTestCase {
+	typealias AnyResource = String
+	typealias AnyResourceLoader = ResourceLoader<AnyResource>
+	typealias AnyResourceMapper = (Data, HTTPURLResponse) throws -> AnyResource
+	
+	static func anyResource() -> AnyResource {
+		return "AnyResource"
+	}
+	
+	func anyInvalidJSON() -> Data {
+		return Data("invalid json".utf8)
 	}
 }
